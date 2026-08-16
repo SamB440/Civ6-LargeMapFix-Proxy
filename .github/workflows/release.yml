@@ -1,0 +1,100 @@
+name: Release build
+
+# Builds version.dll on a clean Windows runner and publishes it as a release.
+#
+# Triggered by pushing a version tag, NOT by creating a release in the UI:
+#
+#     git tag v1.2.0 && git push origin v1.2.0
+#
+# The workflow then creates the release itself, with the DLL and its checksum attached
+# from the start. Build first, release second, deliberately: a release that already
+# exists cannot always accept new assets -- GitHub's immutable releases feature refuses
+# them outright -- so attaching afterwards is not reliably possible. Creating the release
+# with its assets works either way.
+#
+# Release notes come from RELEASE_NOTES.md, so they are versioned with the code. Edit it
+# before tagging.
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release (e.g. v1.2.0)"
+        required: true
+
+permissions:
+  contents: write      # create the release
+  id-token: write      # sign the provenance attestation
+  attestations: write  # record it
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      # Build the tagged source. On a tag push the ref is already the tag; naming it
+      # explicitly also makes a manual re-run build the tag rather than the default
+      # branch.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+
+      # build.bat locates the toolchain through vswhere, which finds the runner's VS2022
+      # install, and verifies its own output: 17 exports, all forwarding to version_orig.
+      - name: Build
+        shell: cmd
+        run: build.bat
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $dll = "build\version.dll"
+          if (-not (Test-Path $dll)) { throw "build.bat did not produce $dll" }
+          $hash = (Get-FileHash $dll -Algorithm SHA256).Hash.ToLower()
+          "$hash  version.dll" | Set-Content -Encoding ascii "build\version.dll.sha256"
+          $size = (Get-Item $dll).Length
+          Write-Host "version.dll  $size bytes  SHA256 $hash"
+          "## version.dll`n`n| | |`n| --- | --- |`n| size | $size bytes |`n| SHA256 | ``$hash`` |" |
+            Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+
+      # Signed, verifiable evidence that this exact DLL came from this exact commit via
+      # this workflow. Worth having: a proxy DLL you drop next to a game executable is
+      # indistinguishable from malware by inspection, so anything that lets someone check
+      # provenance is a real improvement. Verify with:
+      #   gh attestation verify version.dll --repo <owner>/<repo>
+      #
+      # GitHub refuses to persist attestations for user-owned private repos, so this is
+      # skipped there rather than failing the release. A private repo's attestation would
+      # not be checkable by anyone else anyway.
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: build/version.dll
+
+      - name: Note skipped attestation
+        if: ${{ github.event.repository.private }}
+        shell: pwsh
+        run: |
+          "> Build provenance attestation skipped: not available for private repositories." |
+            Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+
+      # Created with its assets in one call, for the immutability reason above.
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $notes = if (Test-Path RELEASE_NOTES.md) { @("--notes-file", "RELEASE_NOTES.md") }
+                   else { @("--generate-notes") }
+          gh release create $env:TAG `
+            --title "$env:TAG — large-map crash fix" `
+            @notes `
+            build/version.dll build/version.dll.sha256
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          Write-Host "published release $env:TAG with assets attached"

@@ -1,0 +1,48 @@
+// GENERATED from a disassembly of CivilizationVI_DX12.exe -- do not edit by hand.
+// The generator is not part of this repository: it needs a copy of the game
+// executable, which is why the table is checked in rather than built.
+//
+// Widen the terrain descriptor index A from 12 to 13 bits: 4096 -> 8192
+// addressable descriptor slots. Six imm32 masks, 0xFFF -> 0x1FFF, all
+// length-preserving.
+//
+// Each site is pinned by RVA and verified against `ctx`, the real bytes of
+// the 24-byte window starting 8 bytes before it. The generator proves that
+// every occurrence of every window anywhere in .text is itself one of these
+// sites, so a window cannot match code we are not patching. Plain uniqueness
+// is not required: the two producers are byte-identical over far more than a
+// window's worth of code, and three sites are the same five bytes
+// (`B8 FF 0F 00 00`), which is also why a signature search alone will not do.
+#pragma once
+#include <cstdint>
+
+namespace Index13 {
+
+static const uint32_t OLD_MASK = 0xFFF;
+static const uint32_t NEW_MASK = 0x1FFF;   // one more index bit
+static const int CTX_BEFORE = 8;
+static const int CTX_LEN    = 24;
+
+// rva:   the instruction, relative to the module base
+// field: byte offset of the imm32 inside that instruction
+// ctx:   bytes that must already be at rva - CTX_BEFORE
+struct Site { uint32_t rva; uint8_t field; uint8_t len; uint8_t ctx[CTX_LEN]; };
+
+static const Site kSites[] = {
+    // module+0xAC41DF: producer 0x140ac4124: bitfield-insert mask -- THE cap on A. `xor cx,di; and cx,ax; xor di,cx` inserts the low bits of the loader's full 16-bit index; the following `and ax,0x1fff` already passes 13
+    { 0x0AC41DF, 1, 5, { 0x44, 0x0F, 0xB7, 0xC8, 0x41, 0x0F, 0xB7, 0x0E, 0xB8, 0xFF, 0x0F, 0x00, 0x00, 0x41, 0x0F, 0xB7, 0x56, 0x02, 0x66, 0x33, 0xCF, 0x66, 0x23, 0xC8 } },
+    // module+0xAC43B0: producer 0x140ac4304: the same insert, byte-for-byte
+    { 0x0AC43B0, 1, 5, { 0x44, 0x0F, 0xB7, 0xC8, 0x41, 0x0F, 0xB7, 0x0E, 0xB8, 0xFF, 0x0F, 0x00, 0x00, 0x41, 0x0F, 0xB7, 0x56, 0x02, 0x66, 0x33, 0xCF, 0x66, 0x23, 0xC8 } },
+    // module+0xAC265E: consumer 0x140ac2630: decref/free -- `and r8w,ax` then `dec dword[refs + idx*4]`, and frees descTab[idx].ptr at zero
+    { 0x0AC265E, 1, 5, { 0x8B, 0x41, 0x28, 0x44, 0x0F, 0xB7, 0x04, 0x50, 0xB8, 0xFF, 0x0F, 0x00, 0x00, 0x66, 0x44, 0x23, 0xC0, 0x48, 0x8B, 0x41, 0x48, 0x41, 0x0F, 0xB7 } },
+    // module+0xAC2EC0: consumer 0x140ac2e70: render -- `shl rdx,4; add rdx,[grid+0x30]`
+    { 0x0AC2EC0, 2, 6, { 0x48, 0x8B, 0x04, 0x1A, 0x0F, 0xB7, 0x14, 0x48, 0x81, 0xE2, 0xFF, 0x0F, 0x00, 0x00, 0x48, 0xC1, 0xE2, 0x04, 0x48, 0x03, 0x53, 0x30, 0x48, 0x8B } },
+    // module+0xAC3184: consumer 0x140ac312c: render -- the original crash site; short `25 imm32` form, so the immediate sits at insn+1 rather than insn+2
+    { 0x0AC3184, 1, 5, { 0x04, 0x48, 0x81, 0xE2, 0xFF, 0x1F, 0x00, 0x00, 0x25, 0xFF, 0x0F, 0x00, 0x00, 0x48, 0xC1, 0xE0, 0x04, 0x48, 0x03, 0x46, 0x30, 0x83, 0x7D, 0x30 } },
+    // module+0xAC40C1: consumer 0x140ac4050: refcount increment -- `inc dword[refs + idx*4]`
+    { 0x0AC40C1, 2, 6, { 0x0F, 0xB7, 0x0C, 0x00, 0x48, 0x8B, 0x47, 0x48, 0x81, 0xE1, 0xFF, 0x0F, 0x00, 0x00, 0xFF, 0x04, 0x88, 0x48, 0x8B, 0x5C, 0x24, 0x30, 0x48, 0x83 } },
+};
+
+static const int kNSites = 6;
+
+}  // namespace Index13

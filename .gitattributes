@@ -1,0 +1,15 @@
+* text=auto
+
+# cmd.exe requires CRLF. A .bat checked out with LF endings fails in ways that look
+# like a syntax error in the script rather than a line-ending problem.
+*.bat text eol=crlf
+
+# Workflow files are consumed by Linux tooling on GitHub's side regardless of the
+# runner OS, so keep them LF.
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+*.c    text
+*.cpp  text
+*.h    text
+*.md   text

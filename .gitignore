@@ -1,0 +1,21 @@
+# Build output. The DLL ships as a GitHub Release asset, not in the tree:
+# a proxy DLL committed to a source repo can't be diffed and reads as malware.
+build/
+
+# MSVC intermediates, in case anyone builds in place
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.idb
+
+# Runtime artefacts, produced beside the DLL in the game folder
+LargeMapFix.log
+CivFixWiden.txt
+CivFixIndex13.txt
+
+# Editors
+.vs/
+.vscode/
+*.user
